@@ -4,17 +4,9 @@ Write-Host "Made by " -ForegroundColor DarkGray -NoNewline
 Write-Host "drakpro6679"
 Write-Host
 
-Write-Host "Enter path to the mods folder: " -NoNewline
-Write-Host "(press Enter to use default)" -ForegroundColor DarkGray
-$mods = Read-Host "PATH"
+$mods = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
+Write-Host "Using default mods folder: $mods" -ForegroundColor White
 Write-Host
-
-if (-not $mods) {
-    $mods = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
-    Write-Host "Continuing with " -NoNewline
-    Write-Host $mods -ForegroundColor White
-    Write-Host
-}
 
 if (-not (Test-Path $mods -PathType Container)) {
     Write-Host "Invalid Path!" -ForegroundColor Red
@@ -38,28 +30,19 @@ if ($process) {
 }
 
 function Get-SHA1 {
-    param (
-        [string]$filePath
-    )
+    param ([string]$filePath)
     return (Get-FileHash -Path $filePath -Algorithm SHA1).Hash
 }
 
 function Get-ZoneIdentifier {
-    param (
-        [string]$filePath
-    )
+    param ([string]$filePath)
     $ads = Get-Content -Raw -Stream Zone.Identifier $filePath -ErrorAction SilentlyContinue
-    if ($ads -match "HostUrl=(.+)") {
-        return $matches[1]
-    }
-
+    if ($ads -match "HostUrl=(.+)") { return $matches[1] }
     return $null
 }
 
 function Fetch-Modrinth {
-    param (
-        [string]$hash
-    )
+    param ([string]$hash)
     try {
         $response = Invoke-RestMethod -Uri "https://api.modrinth.com/v2/version_file/$hash" -Method Get -UseBasicParsing -ErrorAction Stop
         if ($response.project_id) {
@@ -68,21 +51,15 @@ function Fetch-Modrinth {
             return @{ Name = $projectData.title; Slug = $projectData.slug }
         }
     } catch {}
-
     return @{ Name = ""; Slug = "" }
 }
 
 function Fetch-Megabase {
-    param (
-        [string]$hash
-    )
+    param ([string]$hash)
     try {
         $response = Invoke-RestMethod -Uri "https://megabase.vercel.app/api/query?hash=$hash" -Method Get -UseBasicParsing -ErrorAction Stop
-        if (-not $response.error) {
-            return $response.data
-        }
+        if (-not $response.error) { return $response.data }
     } catch {}
-
     return $null
 }
 
@@ -120,13 +97,9 @@ $cheatClients = @(
 )
 
 function Check-Strings {
-    param (
-        [string]$filePath
-    )
-
+    param ([string]$filePath)
     $fileContent = Get-Content -Raw $filePath
     $found = @()
-
     foreach ($client in $cheatClients) {
         foreach ($pattern in $client.Strings) {
             if ($fileContent -match [regex]::Escape($pattern)) {
@@ -137,7 +110,6 @@ function Check-Strings {
             }
         }
     }
-
     return $found
 }
 
@@ -177,7 +149,6 @@ foreach ($file in $jarFiles) {
 if ($unknownMods.Count -gt 0) {
     $tempDir = Join-Path $env:TEMP "habibimodanalyzer"
     $counter = 0
-
     try {
         if (Test-Path $tempDir) { Remove-Item -Recurse -Force $tempDir }
         New-Item -ItemType Directory -Path $tempDir | Out-Null
@@ -224,3 +195,4 @@ if ($cheatMods.Count -gt 0) {
     }
     Write-Host
 }
+
