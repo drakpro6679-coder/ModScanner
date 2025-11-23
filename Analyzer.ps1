@@ -1,6 +1,6 @@
-# ============================
-# Java .JAR Scanner for Cheats
-# ============================
+# ===============================
+# Memory Scanner for Cheat Strings
+# ===============================
 
 $process = Get-Process javaw -ErrorAction SilentlyContinue
 if (!$process) {
@@ -8,58 +8,61 @@ if (!$process) {
     exit
 }
 
-# 1) Definice cheat stringů
+# 1) Cheat stringy
 $ClientStrings = @{
-    "Xenon"        = @("dev/oceanic/xenon", "/impl/dev/oceanic/xenon")
+    "Xenon"        = @("dev/oceanic/xenon","/impl/dev/oceanic/xenon")
     "Skligga"      = @("net/skliggahack/module")
-    "BleachHack"   = @("org/bleachhack/")
-    "Lattia"       = @("com/lattia/mod/")
-    "Wurst"        = @("net/wurstclient/util")
-    "Gardenia"     = @("kambing/gardenia")
     "Scrim"        = @("dev/nixoly/scrim")
+    "Gardenia"     = @("kambing/gardenia")
     "Argon"        = @("dev/lvstrng/argon")
 }
 
-# 2) Najdeme všechny .JAR soubory, které Java načetla
-Write-Host "Hledám .jar soubory načtené Java ClassLoaderem..."
+# 2) Přidáme funkce pro čtení paměti
+Add-Type @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
 
-$jarFiles = (Get-CimInstance Win32_Process -Filter "ProcessId = $($process.Id)").CommandLine `
-    -split " " | Where-Object { $_ -like "*.jar" }
+public class Mem {
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr OpenProcess(int dwDesiredAccess, bool bInheritHandle, int dwProcessId);
 
-if ($jarFiles.Count -eq 0) {
-    Write-Host "Nebyl nalezen žádný .jar soubor."
-    exit
+    [DllImport("kernel32.dll")]
+    public static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, int dwSize, out int lpNumberOfBytesRead);
+
+    public const int PROCESS_WM_READ = 0x0010;
 }
+"@
 
-# 3) Procházíme .jar soubory a hledáme stringy
+$hProc = [Mem]::OpenProcess([Mem]::PROCESS_WM_READ, $false, $process.Id)
+
+# 3) Scan paměti modulů (jen základní memory regions)
 $results = @()
+foreach ($mod in $process.Modules) {
+    $base = $mod.BaseAddress
+    $size = $mod.ModuleMemorySize
 
-foreach ($jar in $jarFiles) {
+    $buffer = New-Object byte[] $size
+    $read = 0
+    [Mem]::ReadProcessMemory($hProc, $base, $buffer, $size, [ref]$read) | Out-Null
 
-    if (-not (Test-Path $jar)) {
-        continue
-    }
-
-    Write-Host "Kontroluji JAR: $jar"
-
-    $content = Get-Content $jar -Raw -ErrorAction SilentlyContinue
+    # ASCII i Unicode
+    $text = [System.Text.Encoding]::ASCII.GetString($buffer) + [System.Text.Encoding]::Unicode.GetString($buffer)
 
     foreach ($client in $ClientStrings.Keys) {
         foreach ($pattern in $ClientStrings[$client]) {
-
-            if ($content -like "*$pattern*") {
-
+            if ($text -like "*$pattern*") {
                 $results += [PSCustomObject]@{
                     Cheat  = $client
                     String = $pattern
-                    Path   = $jar
+                    Path   = "memory"
                 }
             }
         }
     }
 }
 
-# 4) Výpis
+# 4) Výstup
 if ($results.Count -eq 0) {
     Write-Host "Nenalezeny žádné cheat stringy."
 } else {
