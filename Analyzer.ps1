@@ -1,45 +1,67 @@
-Write-Host "🔍 Hledám běžící minecraft (javaw.exe)..."
+# ============================
+# Java .JAR Scanner for Cheats
+# ============================
 
-$proc = Get-Process -Name "javaw" -ErrorAction SilentlyContinue
-if (-not $proc) {
-    Write-Host "❌ javaw.exe neběží."
+$process = Get-Process javaw -ErrorAction SilentlyContinue
+if (!$process) {
+    Write-Host "javaw.exe nebyl nalezen."
     exit
 }
 
-$pid = $proc.Id
-Write-Host "✔ Nalezen proces javaw.exe | PID: $pid"
-
-Write-Host "`n🔍 Čtu načtené moduly a paměťové mapy povolené operačním systémem..."
-
-# Získání čitelných sekcí paměti (bez kernel injection)
-$regions = $proc.Modules | ForEach-Object {
-    try {
-        $_.FileName
-    } catch {}
+# 1) Definice cheat stringů
+$ClientStrings = @{
+    "Xenon"        = @("dev/oceanic/xenon", "/impl/dev/oceanic/xenon")
+    "Skligga"      = @("net/skliggahack/module")
+    "BleachHack"   = @("org/bleachhack/")
+    "Lattia"       = @("com/lattia/mod/")
+    "Wurst"        = @("net/wurstclient/util")
+    "Gardenia"     = @("kambing/gardenia")
+    "Scrim"        = @("dev/nixoly/scrim")
+    "Argon"        = @("dev/lvstrng/argon")
 }
 
-Write-Host "📦 Načtené soubory:"
-$regions | ForEach-Object { Write-Host " - $_" }
+# 2) Najdeme všechny .JAR soubory, které Java načetla
+Write-Host "Hledám .jar soubory načtené Java ClassLoaderem..."
 
-Write-Host "`n🧪 Kontroluju Xenon Client signature..."
+$jarFiles = (Get-CimInstance Win32_Process -Filter "ProcessId = $($process.Id)").CommandLine `
+    -split " " | Where-Object { $_ -like "*.jar" }
 
-$XenonStrings = @(
-    "dev/oceanic/xenon",    # hlavní identifikátor Xenonu
-    "xenon",                # fallback
-    "oceanic.xenon"         # další fallback
-)
+if ($jarFiles.Count -eq 0) {
+    Write-Host "Nebyl nalezen žádný .jar soubor."
+    exit
+}
 
-$found = $false
+# 3) Procházíme .jar soubory a hledáme stringy
+$results = @()
 
-foreach ($module in $regions) {
-    foreach ($sig in $XenonStrings) {
-        if ($module -match $sig) {
-            Write-Host "🚨 XENON CLIENT DETEKOVÁN → $sig" -ForegroundColor Red
-            $found = $true
+foreach ($jar in $jarFiles) {
+
+    if (-not (Test-Path $jar)) {
+        continue
+    }
+
+    Write-Host "Kontroluji JAR: $jar"
+
+    $content = Get-Content $jar -Raw -ErrorAction SilentlyContinue
+
+    foreach ($client in $ClientStrings.Keys) {
+        foreach ($pattern in $ClientStrings[$client]) {
+
+            if ($content -like "*$pattern*") {
+
+                $results += [PSCustomObject]@{
+                    Cheat  = $client
+                    String = $pattern
+                    Path   = $jar
+                }
+            }
         }
     }
 }
 
-if (-not $found) {
-    Write-Host "✔ Xenon Client nebyl nalezen v načtených modulech." -ForegroundColor Green
+# 4) Výpis
+if ($results.Count -eq 0) {
+    Write-Host "Nenalezeny žádné cheat stringy."
+} else {
+    $results | Format-Table -AutoSize
 }
