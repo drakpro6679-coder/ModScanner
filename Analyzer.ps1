@@ -1,43 +1,128 @@
-Write-Host "=== Full JAR String Dumper (Process Hacker style) ===" -ForegroundColor Cyan
+Write-Host "=== FULL MOD + MEMORY STRING SCANNER ===" -ForegroundColor Cyan
 
-$jar = Read-Host "Drag & Drop JAR sem"
+# ======================================================
+# 1) STRINGY PRO DETEKCI (TVÉ VLASTNÍ, ŽÁDNÉ MOJE)
+# ======================================================
+$detectStrings = @(
+    "dev/oceanic/xenon",
+    "xenon",
+    "oceanic",
+    "kauri",
+    "novoline",
+    "sigma",
+    "clickgui",
+    "aimassist",
+    "reach",
+    "uuidspoof",
+    "velocity_bypass"
+)
 
-if (-not (Test-Path $jar)) {
-    Write-Host "❌ Soubor neexistuje!" -ForegroundColor Red
+
+# ======================================================
+# 2) AUTOMATICKÉ NALEZENÍ MODS FOLDERU
+# ======================================================
+$user = $env:USERNAME
+$modsFolder = "C:\Users\$user\AppData\Roaming\.minecraft\mods"
+
+if (-not (Test-Path $modsFolder)) {
+    Write-Host "❌ Nenalezena složka s mody!" -ForegroundColor Red
     exit
 }
 
-Write-Host "[INFO] Načítám celý JAR a extrahuju stringy..." -ForegroundColor Yellow
+Write-Host "[INFO] Mods folder: $modsFolder" -ForegroundColor Yellow
 
-function Get-StringsFromBinary {
+
+# ======================================================
+# 3) FUNKCE — EXTRAKCE STRINGŮ Z BINARY (JAKO PROCESS HACKER)
+# ======================================================
+function Extract-Strings {
     param([byte[]]$bytes)
 
     $builder = New-Object System.Text.StringBuilder
-    $strings = New-Object System.Collections.Generic.List[string]
+    $list = New-Object System.Collections.Generic.List[string]
 
     foreach ($b in $bytes) {
         if ($b -ge 32 -and $b -le 126) {
             $null = $builder.Append([char]$b)
         } else {
             if ($builder.Length -ge 4) {
-                $strings.Add($builder.ToString())
+                $list.Add($builder.ToString())
             }
             $builder.Clear() | Out-Null
         }
     }
 
     if ($builder.Length -ge 4) {
-        $strings.Add($builder.ToString())
+        $list.Add($builder.ToString())
     }
 
-    return $strings
+    return $list
 }
 
-$bytes = [System.IO.File]::ReadAllBytes($jar)
-$strings = Get-StringsFromBinary -bytes $bytes
 
-Write-Host "`n=== FOUND STRINGS ===" -ForegroundColor Cyan
+# ======================================================
+# 4) SCAN JAR MODŮ
+# ======================================================
+Write-Host "`n=== SCAN MODS ===" -ForegroundColor Cyan
 
-$strings | Sort-Object -Unique | Out-Host
+$modFiles = Get-ChildItem $modsFolder -Filter *.jar
 
-Write-Host "`n=== DONE ==="
+foreach ($mod in $modFiles) {
+    Write-Host "`n[SCAN] $($mod.Name)" -ForegroundColor Yellow
+
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($mod.FullName)
+        $strings = Extract-Strings $bytes
+
+        $found = @()
+
+        foreach ($s in $detectStrings) {
+            $hit = $strings | Where-Object { $_.ToLower().Contains($s.ToLower()) }
+            if ($hit) {
+                $found += $s
+            }
+        }
+
+        if ($found.Count -gt 0) {
+            Write-Host "⚠️  DETECTED in $($mod.Name):" -ForegroundColor Red
+            $found | ForEach-Object { Write-Host "   → $_" -ForegroundColor Red }
+        } else {
+            Write-Host "✔ Clean" -ForegroundColor Green
+        }
+    }
+    catch {
+        Write-Host "❌ Cannot read file" -ForegroundColor DarkRed
+    }
+}
+
+
+# ======================================================
+# 5) RUNTIME STRING SCAN (javaw.exe)
+# ======================================================
+Write-Host "`n=== RUNTIME MEMORY SCAN (javaw.exe) ===" -ForegroundColor Cyan
+
+$proc = Get-Process javaw -ErrorAction SilentlyContinue
+
+if (-not $proc) {
+    Write-Host "❌ Minecraft není spuštěný!" -ForegroundColor Red
+    exit
+}
+
+Write-Host "[INFO] Minecraft PID: $($proc.Id)" -ForegroundColor Yellow
+
+foreach ($m in $proc.Modules) {
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($m.FileName)
+        $strings = Extract-Strings $bytes
+
+        foreach ($s in $detectStrings) {
+            if ($strings -match $s) {
+                Write-Host "🔥 DETECTED IN MEMORY → $s" -ForegroundColor Red
+                Write-Host "   Module: $($m.FileName)`n" -ForegroundColor DarkRed
+            }
+        }
+    }
+    catch {}
+}
+
+Write-Host "`n=== SCAN COMPLETE ===" -ForegroundColor Cyan
