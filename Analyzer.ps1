@@ -1,56 +1,61 @@
-Write-Host "=== Xenon Memory Scanner ===" -ForegroundColor Cyan
+Clear-Host
+Write-Host "=== Xenon Runtime Memory Scanner ===" -ForegroundColor Cyan
 
-# Najdi Minecraft proces
-$proc = Get-Process javaw -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $proc) {
-    Write-Host "Minecraft (javaw.exe) not running." -ForegroundColor Yellow
-    exit
-}
-
-Write-Host "Found Minecraft PID: $($proc.Id)" -ForegroundColor Green
-
-# Temp dump
-$dumpFile = "$env:TEMP\mc_memdump.dmp"
-
-# Získání ProcessDump.exe od Microsoftu
-$pd = "$env:TEMP\procdump.exe"
-if (-not (Test-Path $pd)) {
-    Write-Host "Downloading procdump..." -ForegroundColor Yellow
-    Invoke-WebRequest "https://download.sysinternals.com/files/Procdump.zip" -OutFile "$env:TEMP\procdump.zip"
-    Expand-Archive "$env:TEMP\procdump.zip" -DestinationPath $env:TEMP -Force
-}
-
-# Vytvoření dumpu
-Write-Host "Creating memory dump..." -ForegroundColor Yellow
-Start-Process -FilePath $pd -ArgumentList "-ma $($proc.Id) $dumpFile" -Wait
-
-# Čtení dumpu přes "strings"
-Write-Host "Extracting text strings from memory dump..." -ForegroundColor Yellow
-$strings = & "$env:windir\System32\findstr.exe" /R /N "." $dumpFile 2>$null
-
-if (-not $strings) {
-    Write-Host "Failed to read strings from dump." -ForegroundColor Red
-    exit
-}
-
-# Hledané patterny pro Xenon
+# Stringy které hledáme (TVÉ XENON PATTERNY)
 $patterns = @(
-    "dev/oceanic/xenon"
+    "dev/oceanic/xenon",
+    "oceanic/xenon",
+    "xenon",
+    "oceanic",
+    "module/setting",
+    "ModuleManager",
+    "Lambda"
 )
 
-Write-Host "`nSearching for Xenon..." -ForegroundColor Cyan
+# Najdeme Minecraft proces
+$mc = Get-Process javaw -ErrorAction SilentlyContinue
+if (-not $mc) {
+    Write-Host "Minecraft (javaw) není spuštěný!" -ForegroundColor Red
+    exit
+}
 
-$found = $false
+Write-Host "Found Minecraft PID: $($mc.Id)" -ForegroundColor Yellow
 
-foreach ($p in $patterns) {
-    if ($strings -match $p) {
-        Write-Host "🔥 XENON DETECTED → $p" -ForegroundColor Red
-        $found = $true
+# Získáme moduly načtené do paměti
+Write-Host "`n[INFO] Scanning process memory modules..." -ForegroundColor Cyan
+$modules = $mc.Modules
+
+# Připravíme kolekci pro nalezené stringy
+$matches = @()
+
+foreach ($m in $modules) {
+    try {
+        $path = $m.FileName
+
+        # Otevřeme modul jako textový blok (částečně čitelné stringy)
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+        $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+
+        foreach ($p in $patterns) {
+            if ($text.ToLower().Contains($p.ToLower())) {
+                $matches += [PSCustomObject]@{
+                    Pattern = $p
+                    Module  = $path
+                }
+            }
+        }
+    } catch {
+        # některé moduly nejdou číst → ignorujeme
     }
 }
 
-if (-not $found) {
-    Write-Host "No Xenon signatures found." -ForegroundColor Green
+Write-Host "`n=== Scan Results ===" -ForegroundColor Green
+
+if ($matches.Count -eq 0) {
+    Write-Host "No Xenon indicators found in memory." -ForegroundColor Gray
+} else {
+    Write-Host "`n!!! XENON CLIENT DETECTED IN MEMORY !!!" -ForegroundColor Red
+    $matches | Format-Table -AutoSize
 }
 
-Write-Host "`nDone."
+Write-Host "`nScan complete."
