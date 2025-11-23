@@ -1,19 +1,12 @@
 Clear-Host
 Write-Host "Mod Analyzer" -ForegroundColor Yellow
-Write-Host "Made by drakpro6679" -ForegroundColor DarkGray
+Write-Host "Made by drakpro6679"
 Write-Host
 
-# Prompt for mods folder
-Write-Host "Enter path to the mods folder: " -NoNewline
-Write-Host "(press Enter to use default)" -ForegroundColor DarkGray
-$mods = Read-Host "PATH"
+# automatická cesta k mods
+$mods = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
+Write-Host "Using default mods folder: $mods" -ForegroundColor White
 Write-Host
-
-if (-not $mods) {
-    $mods = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
-    Write-Host "Using default mods folder: $mods" -ForegroundColor White
-    Write-Host
-}
 
 if (-not (Test-Path $mods -PathType Container)) {
     Write-Host "Invalid Path!" -ForegroundColor Red
@@ -22,7 +15,9 @@ if (-not (Test-Path $mods -PathType Container)) {
 
 # Minecraft uptime
 $process = Get-Process javaw -ErrorAction SilentlyContinue
-if (-not $process) { $process = Get-Process java -ErrorAction SilentlyContinue }
+if (-not $process) {
+    $process = Get-Process java -ErrorAction SilentlyContinue
+}
 
 if ($process) {
     try {
@@ -35,13 +30,13 @@ if ($process) {
     Write-Host ""
 }
 
-# Hash function
+# Funkce pro SHA1 hash
 function Get-SHA1 {
     param ([string]$filePath)
     return (Get-FileHash -Path $filePath -Algorithm SHA1).Hash
 }
 
-# Zone identifier (for downloaded files)
+# Funkce pro kontrolu Zone.Identifier
 function Get-ZoneIdentifier {
     param ([string]$filePath)
     $ads = Get-Content -Raw -Stream Zone.Identifier $filePath -ErrorAction SilentlyContinue
@@ -49,21 +44,20 @@ function Get-ZoneIdentifier {
     return $null
 }
 
-# Fetch info from Modrinth
+# Funkce pro Modrinth
 function Fetch-Modrinth {
     param ([string]$hash)
     try {
         $response = Invoke-RestMethod -Uri "https://api.modrinth.com/v2/version_file/$hash" -Method Get -UseBasicParsing -ErrorAction Stop
         if ($response.project_id) {
-            $projectResponse = "https://api.modrinth.com/v2/project/$($response.project_id)"
-            $projectData = Invoke-RestMethod -Uri $projectResponse -Method Get -UseBasicParsing -ErrorAction Stop
+            $projectData = Invoke-RestMethod -Uri "https://api.modrinth.com/v2/project/$($response.project_id)" -Method Get -UseBasicParsing -ErrorAction Stop
             return @{ Name = $projectData.title; Slug = $projectData.slug }
         }
     } catch {}
     return @{ Name = ""; Slug = "" }
 }
 
-# Fetch info from Megabase
+# Funkce pro Megabase
 function Fetch-Megabase {
     param ([string]$hash)
     try {
@@ -73,53 +67,24 @@ function Fetch-Megabase {
     return $null
 }
 
-# Cheat strings
-$cheatStrings = @(
-    @{ Name = "Skligga"; Strings = @("net/skliggahack/module", "restore pre 1.18.2 loading screen behavior") },
-    @{ Name = "BleachHack"; Strings = @("org/bleachhack/", "Makes you not swing your hand") },
-    @{ Name = "Ghost Bleach"; Strings = @("bleachhack_outline") },
-    @{ Name = "Lattia"; Strings = @(".lattia","com/lattia/mod/") },
-    @{ Name = "Wurst"; Strings = @("net/wurstclient/util") },
-    @{ Name = "Wingclient"; Strings = @("SelfDestruct.java","Triggerbot.java","gradient_frame") },
-    @{ Name = "Lumina"; Strings = @("me/stormcph/lumina") },
-    @{ Name = "NoWeakAttack"; Strings = @("assets/noweakattack/") },
-    @{ Name = "Coffe Client"; Strings = @("coffee/client/helper") },
-    @{ Name = "Prestige"; Strings = @("dev/zprestige/prestige","MixinLightmapTextureManager.class") },
-    @{ Name = "Surge Client"; Strings = @("032E02B4-0499-05D6-5A06-510700080009","gradient_frame") },
-    @{ Name = "Xyla"; Strings = @("impl/xy_la","impl/xyla") },
-    @{ Name = "St-Api"; Strings = @("st/mixin/KeyboardMixin") },
-    @{ Name = "Meteor Client"; Strings = @("meteordevelopment/orbit/") },
-    @{ Name = "ThunderHack"; Strings = @("thunder/hack") },
-    @{ Name = "NewLauncher"; Strings = @("newlauncher") },
-    @{ Name = "Catlean"; Strings = @("Catlean") },
-    @{ Name = "Cracked Grim"; Strings = @("ops/ec/kekma","abc/def/event/impl") },
-    @{ Name = "Doomsday Client"; Strings = @("l.pngUT") },
-    @{ Name = "Pojav Client"; Strings = @("ie/skobelevs/gui/screen/") },
-    @{ Name = "Polar Client"; Strings = @("modelfix/addons/addon/render") },
-    @{ Name = "Krypton Client"; Strings = @("a/b/c/z") },
-    @{ Name = "Gardenia Client"; Strings = @("kambing/gardenia") },
-    @{ Name = "Shoreline"; Strings = @("shoreline/client") },
-    @{ Name = "Minced"; Strings = @("free/minced") },
-    @{ Name = "Scrim Client"; Strings = @("dev/nixoly/scrim") },
-    @{ Name = "Argon Client"; Strings = @("dev/lvstrng/argon") },
-    @{ Name = "Owo Client"; Strings = @("OwoConfig","OwoMenu","Triggerbot") },
-    @{ Name = "Xenon Client"; Strings = @("dev/oceanic/xenon") },
-    @{ Name = "Kaira Client"; Strings = @("examplemod") }
+# Cheat stringy
+$cheatClients = @(
+    @{ Name = "Xenon Client"; Strings = @("dev/oceanic/xenon") }
+    # Přidej další klienty podle potřeby
 )
 
-# Check cheat strings in file
 function Check-Strings {
     param ([string]$filePath)
-    $found = @()
-    $content = Get-Content -Raw $filePath
-    foreach ($client in $cheatStrings) {
+    $stringsFound = [System.Collections.Generic.List[string]]::new()
+    $fileContent = Get-Content -Raw $filePath
+    foreach ($client in $cheatClients) {
         foreach ($str in $client.Strings) {
-            if ($content -match [regex]::Escape($str)) {
-                $found += @{ Client = $client.Name; Path = $filePath; String = $str }
+            if ($fileContent -match [regex]::Escape($str)) {
+                $stringsFound.Add("Client name: $($client.Name) / Path: $filePath / String: $str")
             }
         }
     }
-    return $found
+    return $stringsFound
 }
 
 $verifiedMods = @()
@@ -127,11 +92,9 @@ $unknownMods = @()
 $cheatMods = @()
 
 $jarFiles = Get-ChildItem -Path $mods -Filter *.jar
-$spinner = @("|","/","-","\")
+$spinner = @("|", "/", "-", "\")
 $totalMods = $jarFiles.Count
 $counter = 0
-
-$tempDir = Join-Path $env:TEMP "modanalyzer"
 
 foreach ($file in $jarFiles) {
     $counter++
@@ -153,21 +116,14 @@ foreach ($file in $jarFiles) {
 
     $zoneId = Get-ZoneIdentifier $file.FullName
     $unknownMods += [PSCustomObject]@{ FileName = $file.Name; FilePath = $file.FullName; ZoneId = $zoneId }
-}
 
-# Scan unknown mods for cheat strings
-foreach ($mod in $unknownMods) {
-    $modStrings = Check-Strings $mod.FilePath
+    $modStrings = Check-Strings $file.FullName
     if ($modStrings.Count -gt 0) {
-        foreach ($f in $modStrings) {
-            Write-Host "Client name: $($f.Client)  | Path: $($f.Path)  | String: $($f.String)" -ForegroundColor Red
-        }
-        $cheatMods += $mod
-        $unknownMods = $unknownMods | Where-Object { $_ -ne $mod }
+        $cheatMods += [PSCustomObject]@{ FileName = $file.Name; StringsFound = $modStrings }
+        $unknownMods = @($unknownMods | Where-Object { $_.FileName -ne $file.Name })
     }
 }
 
-# Display results
 Write-Host "`r$(' ' * 80)`r" -NoNewline
 
 if ($verifiedMods.Count -gt 0) {
@@ -194,6 +150,11 @@ if ($unknownMods.Count -gt 0) {
 
 if ($cheatMods.Count -gt 0) {
     Write-Host "{ Cheat Mods }" -ForegroundColor DarkCyan
-    foreach ($mod in $cheatMods) { Write-Host "> $($mod.FileName)" -ForegroundColor Red }
+    foreach ($mod in $cheatMods) {
+        foreach ($str in $mod.StringsFound) {
+            Write-Host "> $($mod.FileName)" -ForegroundColor Red
+            Write-Host " [$str]" -ForegroundColor DarkMagenta
+        }
+    }
     Write-Host
 }
