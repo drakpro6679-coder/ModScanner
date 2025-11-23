@@ -4,7 +4,7 @@ Write-Host "Made by " -ForegroundColor DarkGray -NoNewline
 Write-Host "drakpro6679"
 Write-Host
 
-# Automaticky použije defaultní složku
+# Použití defaultní složky pro mody
 $mods = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
 Write-Host "Using default mods folder: $mods" -ForegroundColor White
 Write-Host
@@ -62,7 +62,7 @@ $cheatClients = @(
     @{ Name = "Scrim Client"; Strings = @("dev/nixoly/scrim", "1d1o4d4HVvAIeKJPVhZ6jCZ7ixV0MS") },
     @{ Name = "Argon Client"; Strings = @("dev/lvstrng/argon") },
     @{ Name = "Owo Client"; Strings = @("OwoConfig", "OwoMenu", "Triggerbot") },
-    @{ Name = "Xenon Client"; Strings = @("*Ldev/oceanic/xenon/module/setting/Setting;", "dev/oceanic/xenon/module/ModuleManager$$Lambda+0x0000013f02588220") },
+    @{ Name = "Xenon Client"; Strings = @("dev/oceanic/xenon") },
     @{ Name = "Kaira Client"; Strings = @("examplemod") }
 )
 
