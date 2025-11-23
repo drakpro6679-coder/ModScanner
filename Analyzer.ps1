@@ -1,61 +1,43 @@
-Clear-Host
-Write-Host "=== Xenon Runtime Memory Scanner ===" -ForegroundColor Cyan
+Write-Host "=== Full JAR String Dumper (Process Hacker style) ===" -ForegroundColor Cyan
 
-# Stringy které hledáme (TVÉ XENON PATTERNY)
-$patterns = @(
-    "dev/oceanic/xenon",
-    "oceanic/xenon",
-    "xenon",
-    "oceanic",
-    "module/setting",
-    "ModuleManager",
-    "Lambda"
-)
+$jar = Read-Host "Drag & Drop JAR sem"
 
-# Najdeme Minecraft proces
-$mc = Get-Process javaw -ErrorAction SilentlyContinue
-if (-not $mc) {
-    Write-Host "Minecraft (javaw) není spuštěný!" -ForegroundColor Red
+if (-not (Test-Path $jar)) {
+    Write-Host "❌ Soubor neexistuje!" -ForegroundColor Red
     exit
 }
 
-Write-Host "Found Minecraft PID: $($mc.Id)" -ForegroundColor Yellow
+Write-Host "[INFO] Načítám celý JAR a extrahuju stringy..." -ForegroundColor Yellow
 
-# Získáme moduly načtené do paměti
-Write-Host "`n[INFO] Scanning process memory modules..." -ForegroundColor Cyan
-$modules = $mc.Modules
+function Get-StringsFromBinary {
+    param([byte[]]$bytes)
 
-# Připravíme kolekci pro nalezené stringy
-$matches = @()
+    $builder = New-Object System.Text.StringBuilder
+    $strings = New-Object System.Collections.Generic.List[string]
 
-foreach ($m in $modules) {
-    try {
-        $path = $m.FileName
-
-        # Otevřeme modul jako textový blok (částečně čitelné stringy)
-        $bytes = [System.IO.File]::ReadAllBytes($path)
-        $text = [System.Text.Encoding]::ASCII.GetString($bytes)
-
-        foreach ($p in $patterns) {
-            if ($text.ToLower().Contains($p.ToLower())) {
-                $matches += [PSCustomObject]@{
-                    Pattern = $p
-                    Module  = $path
-                }
+    foreach ($b in $bytes) {
+        if ($b -ge 32 -and $b -le 126) {
+            $null = $builder.Append([char]$b)
+        } else {
+            if ($builder.Length -ge 4) {
+                $strings.Add($builder.ToString())
             }
+            $builder.Clear() | Out-Null
         }
-    } catch {
-        # některé moduly nejdou číst → ignorujeme
     }
+
+    if ($builder.Length -ge 4) {
+        $strings.Add($builder.ToString())
+    }
+
+    return $strings
 }
 
-Write-Host "`n=== Scan Results ===" -ForegroundColor Green
+$bytes = [System.IO.File]::ReadAllBytes($jar)
+$strings = Get-StringsFromBinary -bytes $bytes
 
-if ($matches.Count -eq 0) {
-    Write-Host "No Xenon indicators found in memory." -ForegroundColor Gray
-} else {
-    Write-Host "`n!!! XENON CLIENT DETECTED IN MEMORY !!!" -ForegroundColor Red
-    $matches | Format-Table -AutoSize
-}
+Write-Host "`n=== FOUND STRINGS ===" -ForegroundColor Cyan
 
-Write-Host "`nScan complete."
+$strings | Sort-Object -Unique | Out-Host
+
+Write-Host "`n=== DONE ==="
