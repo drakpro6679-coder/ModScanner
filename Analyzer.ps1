@@ -1,9 +1,10 @@
 Clear-Host
-Write-Host "Habibi Mod Analyzer" -ForegroundColor Yellow
+Write-Host "Mod Analyzer" -ForegroundColor Yellow
 Write-Host "Made by " -ForegroundColor DarkGray -NoNewline
 Write-Host "drakpro6679"
 Write-Host
 
+# Automaticky použije defaultní složku
 $mods = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
 Write-Host "Using default mods folder: $mods" -ForegroundColor White
 Write-Host
@@ -14,9 +15,7 @@ if (-not (Test-Path $mods -PathType Container)) {
 }
 
 $process = Get-Process javaw -ErrorAction SilentlyContinue
-if (-not $process) {
-    $process = Get-Process java -ErrorAction SilentlyContinue
-}
+if (-not $process) { $process = Get-Process java -ErrorAction SilentlyContinue }
 
 if ($process) {
     try {
@@ -29,39 +28,10 @@ if ($process) {
     Write-Host ""
 }
 
-function Get-SHA1 {
-    param ([string]$filePath)
-    return (Get-FileHash -Path $filePath -Algorithm SHA1).Hash
-}
-
-function Get-ZoneIdentifier {
-    param ([string]$filePath)
-    $ads = Get-Content -Raw -Stream Zone.Identifier $filePath -ErrorAction SilentlyContinue
-    if ($ads -match "HostUrl=(.+)") { return $matches[1] }
-    return $null
-}
-
-function Fetch-Modrinth {
-    param ([string]$hash)
-    try {
-        $response = Invoke-RestMethod -Uri "https://api.modrinth.com/v2/version_file/$hash" -Method Get -UseBasicParsing -ErrorAction Stop
-        if ($response.project_id) {
-            $projectResponse = "https://api.modrinth.com/v2/project/$($response.project_id)"
-            $projectData = Invoke-RestMethod -Uri $projectResponse -Method Get -UseBasicParsing -ErrorAction Stop
-            return @{ Name = $projectData.title; Slug = $projectData.slug }
-        }
-    } catch {}
-    return @{ Name = ""; Slug = "" }
-}
-
-function Fetch-Megabase {
-    param ([string]$hash)
-    try {
-        $response = Invoke-RestMethod -Uri "https://megabase.vercel.app/api/query?hash=$hash" -Method Get -UseBasicParsing -ErrorAction Stop
-        if (-not $response.error) { return $response.data }
-    } catch {}
-    return $null
-}
+function Get-SHA1 { param ([string]$filePath) return (Get-FileHash -Path $filePath -Algorithm SHA1).Hash }
+function Get-ZoneIdentifier { param ([string]$filePath) $ads = Get-Content -Raw -Stream Zone.Identifier $filePath -ErrorAction SilentlyContinue; if ($ads -match "HostUrl=(.+)") { return $matches[1] } return $null }
+function Fetch-Modrinth { param ([string]$hash) try { $response = Invoke-RestMethod -Uri "https://api.modrinth.com/v2/version_file/$hash" -Method Get -UseBasicParsing -ErrorAction Stop; if ($response.project_id) { $projectResponse = "https://api.modrinth.com/v2/project/$($response.project_id)"; $projectData = Invoke-RestMethod -Uri $projectResponse -Method Get -UseBasicParsing -ErrorAction Stop; return @{ Name = $projectData.title; Slug = $projectData.slug } } } catch {}; return @{ Name = ""; Slug = "" } }
+function Fetch-Megabase { param ([string]$hash) try { $response = Invoke-RestMethod -Uri "https://megabase.vercel.app/api/query?hash=$hash" -Method Get -UseBasicParsing -ErrorAction Stop; if (-not $response.error) { return $response.data } } catch {}; return $null }
 
 $cheatClients = @(
     @{ Name = "Skligga"; Strings = @("net/skliggahack/module", "restore pre 1.18.2 loading screen behavior") },
@@ -92,7 +62,7 @@ $cheatClients = @(
     @{ Name = "Scrim Client"; Strings = @("dev/nixoly/scrim", "1d1o4d4HVvAIeKJPVhZ6jCZ7ixV0MS") },
     @{ Name = "Argon Client"; Strings = @("dev/lvstrng/argon") },
     @{ Name = "Owo Client"; Strings = @("OwoConfig", "OwoMenu", "Triggerbot") },
-    @{ Name = "Xenon Client"; Strings = @("Your HWID is:") },
+    @{ Name = "Xenon Client"; Strings = @("*Ldev/oceanic/xenon/module/setting/Setting;", "dev/oceanic/xenon/module/ModuleManager$$Lambda+0x0000013f02588220") },
     @{ Name = "Kaira Client"; Strings = @("examplemod") }
 )
 
@@ -105,7 +75,8 @@ function Check-Strings {
             if ($fileContent -match [regex]::Escape($pattern)) {
                 $found += [PSCustomObject]@{
                     Client = $client.Name
-                    Match  = $pattern
+                    Path   = $filePath
+                    String = $pattern
                 }
             }
         }
@@ -118,7 +89,6 @@ $unknownMods = @()
 $cheatMods = @()
 
 $jarFiles = Get-ChildItem -Path $mods -Filter *.jar
-
 $spinner = @("|", "/", "-", "\")
 $totalMods = $jarFiles.Count
 $counter = 0
@@ -133,13 +103,13 @@ foreach ($file in $jarFiles) {
     $modDataModrinth = Fetch-Modrinth -hash $hash
     if ($modDataModrinth.Slug) {
         $verifiedMods += [PSCustomObject]@{ ModName = $modDataModrinth.Name; FileName = $file.Name }
-        continue;
+        continue
     }
 
     $modDataMegabase = Fetch-Megabase -hash $hash
     if ($modDataMegabase.name) {
         $verifiedMods += [PSCustomObject]@{ ModName = $modDataMegabase.Name; FileName = $file.Name }
-        continue;
+        continue
     }
 
     $zoneId = Get-ZoneIdentifier $file.FullName
@@ -162,7 +132,7 @@ if ($unknownMods.Count -gt 0) {
             $modStrings = Check-Strings $mod.FilePath
             if ($modStrings.Count -gt 0) {
                 $unknownMods = @($unknownMods | Where-Object -FilterScript {$_ -ne $mod})
-                $cheatMods += [PSCustomObject]@{ FileName = $mod.FileName; StringsFound = $modStrings }
+                $cheatMods += $modStrings
                 continue
             }
         }
@@ -187,12 +157,9 @@ if ($verifiedMods.Count -gt 0) {
 if ($cheatMods.Count -gt 0) {
     Write-Host "{ Cheat Mods }" -ForegroundColor DarkCyan
     foreach ($mod in $cheatMods) {
-        Write-Host "> $($mod.FileName)" -ForegroundColor Red
-        foreach ($match in $mod.StringsFound) {
-            Write-Host "  → Found in: $($match.Client)"
-            Write-Host "    String: $($match.Match)"
-        }
+        Write-Host "Client name: $($mod.Client)"
+        Write-Host "Path: $($mod.Path)"
+        Write-Host "String: $($mod.String)"
+        Write-Host ""
     }
-    Write-Host
 }
-
