@@ -1,104 +1,45 @@
-Write-Host "=== Automatic Mod + javaw.exe String Scanner ===" -ForegroundColor Cyan
+Write-Host "🔍 Hledám běžící minecraft (javaw.exe)..."
 
-# ====== CONFIG ======
-$modFolder = "$env:APPDATA\.minecraft\mods"
-$searchStrings = @(
-    "xenon",
-    "dev/oceanic/xenon",
-    "oceanic",
-    "kauri",
-    "novoline",
-    "sigma",
-    "clickgui",
-    "aimassist",
-    "reach",
-    "uuidspoof",
-    "velocity_bypass"
+$proc = Get-Process -Name "javaw" -ErrorAction SilentlyContinue
+if (-not $proc) {
+    Write-Host "❌ javaw.exe neběží."
+    exit
+}
+
+$pid = $proc.Id
+Write-Host "✔ Nalezen proces javaw.exe | PID: $pid"
+
+Write-Host "`n🔍 Čtu načtené moduly a paměťové mapy povolené operačním systémem..."
+
+# Získání čitelných sekcí paměti (bez kernel injection)
+$regions = $proc.Modules | ForEach-Object {
+    try {
+        $_.FileName
+    } catch {}
+}
+
+Write-Host "📦 Načtené soubory:"
+$regions | ForEach-Object { Write-Host " - $_" }
+
+Write-Host "`n🧪 Kontroluju Xenon Client signature..."
+
+$XenonStrings = @(
+    "dev/oceanic/xenon",    # hlavní identifikátor Xenonu
+    "xenon",                # fallback
+    "oceanic.xenon"         # další fallback
 )
 
-# ====== FUNCTION: Extract strings from JAR bytes ======
-function Get-StringsFromBytes {
-    param([byte[]]$bytes)
+$found = $false
 
-    $sb = New-Object System.Text.StringBuilder
-    $strings = @()
-
-    foreach ($b in $bytes) {
-        if ($b -ge 32 -and $b -le 126) {
-            $null = $sb.Append([char]$b)
-        } else {
-            if ($sb.Length -ge 4) {
-                $strings += $sb.ToString()
-            }
-            $sb.Clear() | Out-Null
-        }
-    }
-
-    if ($sb.Length -ge 4) {
-        $strings += $sb.ToString()
-    }
-
-    return $strings
-}
-
-# ====== SCAN MODS ======
-Write-Host "`n[INFO] Scanning mods folder: $modFolder`n"
-
-$modFiles = Get-ChildItem -Path $modFolder -Filter "*.jar" -ErrorAction SilentlyContinue
-
-if ($modFiles.Count -eq 0) {
-    Write-Host "[WARN] No JAR files found." -ForegroundColor Yellow
-} else {
-    foreach ($mod in $modFiles) {
-        Write-Host "`n--- Scanning: $($mod.Name) ---" -ForegroundColor Cyan
-
-        try {
-            $bytes = [System.IO.File]::ReadAllBytes($mod.FullName)
-            $allStrings = Get-StringsFromBytes $bytes
-
-            foreach ($pattern in $searchStrings) {
-                $found = $allStrings | Where-Object { $_ -match $pattern }
-                if ($found) {
-                    Write-Host "[FOUND] '$pattern' in $($mod.Name)" -ForegroundColor Green
-                }
-            }
-        }
-        catch {
-            Write-Host "[ERROR] Could not read file: $($mod.Name)" -ForegroundColor Red
+foreach ($module in $regions) {
+    foreach ($sig in $XenonStrings) {
+        if ($module -match $sig) {
+            Write-Host "🚨 XENON CLIENT DETEKOVÁN → $sig" -ForegroundColor Red
+            $found = $true
         }
     }
 }
 
-# ====== SCAN javaw.exe (Process Hacker style) ======
-Write-Host "`n[INFO] Searching for javaw.exe process..." -ForegroundColor Cyan
-
-$java = Get-Process javaw -ErrorAction SilentlyContinue
-
-if ($java) {
-    Write-Host "[INFO] javaw.exe PID: $($java.Id)`n"
-
-    try {
-        $handle = $java.Handle
-        $memDump = ""
-        $reader = New-Object System.IO.StreamReader($java.MainModule.FileName)
-        $bytes = [System.IO.File]::ReadAllBytes($java.MainModule.FileName)
-        $allStrings = Get-StringsFromBytes $bytes
-
-        Write-Host "=== Checking javaw.exe strings ==="
-
-        foreach ($pattern in $searchStrings) {
-            $found = $allStrings | Where-Object { $_ -match $pattern }
-            if ($found) {
-                Write-Host "[FOUND] '$pattern' in javaw.exe" -ForegroundColor Green
-            }
-        }
-    }
-    catch {
-        Write-Host "[ERROR] Cannot scan javaw.exe memory." -ForegroundColor Red
-    }
+if (-not $found) {
+    Write-Host "✔ Xenon Client nebyl nalezen v načtených modulech." -ForegroundColor Green
 }
-else {
-    Write-Host "[INFO] javaw.exe not running."
-}
-
-Write-Host "`n=== DONE ==="
